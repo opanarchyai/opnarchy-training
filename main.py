@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import os
 import numpy as np
 from aiohttp import web
 import websockets
@@ -20,11 +21,10 @@ connected_clients = set()
 
 def training_loop():
     try:
-        client = p.connect(p.DIRECT)
+        p.connect(p.DIRECT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
         total_episodes = 1000
-        q_table = np.zeros((10, 10, 7))
 
         for episode in range(total_episodes):
             p.resetSimulation()
@@ -127,7 +127,7 @@ async def broadcast_loop():
                     return_exceptions=True
                 )
 
-async def ws_handler(websocket):
+async def ws_handler(websocket, path=None):
     connected_clients.add(websocket)
     print(f"Client connected. Total: {len(connected_clients)}")
     try:
@@ -163,7 +163,7 @@ async def http_handler(request):
         </style>
     </head>
     <body>
-        <h1>⚡ Opnarchy Robot Training</h1>
+        <h1>Opnarchy Robot Training</h1>
         <div class="stat">Episode: {state["episode"]}</div>
         <div class="stat">
             Current Reward: {state["current_reward"]}
@@ -180,6 +180,9 @@ async def http_handler(request):
         <div class="stat">
             Steps: {state["total_steps"]}
         </div>
+        <div class="stat">
+            WebSocket: wss://web-production-91a926.up.railway.app/ws
+        </div>
     </body>
     </html>
     """
@@ -192,17 +195,41 @@ async def main():
 
     asyncio.create_task(broadcast_loop())
 
+    port = int(os.getenv("PORT", 8000))
+
     app = web.Application()
     app.router.add_get("/", http_handler)
+    app.router.add_get("/ws", handle_ws_upgrade)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8000)
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print("HTTP server on port 8000")
+    print(f"Server on port {port}")
+    await asyncio.Future()
 
-    async with websockets.serve(ws_handler, "0.0.0.0", 8765):
-        print("WebSocket on port 8765")
-        await asyncio.Future()
+async def handle_ws_upgrade(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    connected_clients.add(ws)
+    print(f"WS Client connected. Total: {len(connected_clients)}")
+    try:
+        await ws.send_str(json.dumps({
+            "type": "welcome",
+            "message": "Connected to Opnarchy Training",
+            "current_state": state
+        }))
+        async for msg in ws:
+            pass
+    finally:
+        connected_clients.discard(ws)
+    return ws
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+---
+
+This runs everything on one single port that Railway assigns. WebSocket connects via:
+```
+wss://web-production-91a926.up.railway.app/ws
