@@ -4,5 +4,5 @@ gymnasium==0.29.1
 numpy==1.23.5
 websockets==11.0.3
 aiohttp==3.8.5
-torch==2.0.1+cpu
+torch==2.0.1
 setuptools==68.0.0
