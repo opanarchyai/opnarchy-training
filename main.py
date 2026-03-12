@@ -23,7 +23,7 @@ def training_loop():
         p.connect(p.DIRECT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
-        total_episodes = 1000
+        total_episodes = 999999
 
         for episode in range(total_episodes):
             p.resetSimulation()
