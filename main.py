@@ -4,7 +4,6 @@ import threading
 import os
 import numpy as np
 from aiohttp import web
-import websockets
 import pybullet as p
 import pybullet_data
 
@@ -122,23 +121,10 @@ async def broadcast_loop():
                     "total_steps": state["total_steps"]
                 })
                 await asyncio.gather(
-                    *[client.send(message)
+                    *[client.send_str(message)
                       for client in connected_clients],
                     return_exceptions=True
                 )
-
-async def ws_handler(websocket, path=None):
-    connected_clients.add(websocket)
-    print(f"Client connected. Total: {len(connected_clients)}")
-    try:
-        await websocket.send(json.dumps({
-            "type": "welcome",
-            "message": "Connected to Opnarchy Training",
-            "current_state": state
-        }))
-        await websocket.wait_closed()
-    finally:
-        connected_clients.discard(websocket)
 
 async def http_handler(request):
     html = f"""
@@ -165,47 +151,15 @@ async def http_handler(request):
     <body>
         <h1>Opnarchy Robot Training</h1>
         <div class="stat">Episode: {state["episode"]}</div>
-        <div class="stat">
-            Current Reward: {state["current_reward"]}
-        </div>
-        <div class="stat">
-            Best Reward: {state["best_reward"]}
-        </div>
-        <div class="stat success">
-            Pickup: {state["pickup_success"]}
-        </div>
-        <div class="stat">
-            Progress: {state["progress_percent"]}%
-        </div>
-        <div class="stat">
-            Steps: {state["total_steps"]}
-        </div>
-        <div class="stat">
-            WebSocket: wss://web-production-91a926.up.railway.app/ws
-        </div>
+        <div class="stat">Current Reward: {state["current_reward"]}</div>
+        <div class="stat">Best Reward: {state["best_reward"]}</div>
+        <div class="stat success">Pickup: {state["pickup_success"]}</div>
+        <div class="stat">Progress: {state["progress_percent"]}%</div>
+        <div class="stat">Steps: {state["total_steps"]}</div>
     </body>
     </html>
     """
     return web.Response(text=html, content_type="text/html")
-
-async def main():
-    t = threading.Thread(target=training_loop, daemon=True)
-    t.start()
-    print("Training started")
-
-    asyncio.create_task(broadcast_loop())
-
-    port = int(os.getenv("PORT", 8000))
-
-    app = web.Application()
-    app.router.add_get("/", http_handler)
-    app.router.add_get("/ws", handle_ws_upgrade)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"Server on port {port}")
-    await asyncio.Future()
 
 async def handle_ws_upgrade(request):
     ws = web.WebSocketResponse()
@@ -224,12 +178,24 @@ async def handle_ws_upgrade(request):
         connected_clients.discard(ws)
     return ws
 
+async def main():
+    t = threading.Thread(target=training_loop, daemon=True)
+    t.start()
+    print("Training started")
+
+    asyncio.create_task(broadcast_loop())
+
+    port = int(os.getenv("PORT", 8000))
+
+    app = web.Application()
+    app.router.add_get("/", http_handler)
+    app.router.add_get("/ws", handle_ws_upgrade)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"Server running on port {port}")
+    await asyncio.Future()
+
 if __name__ == "__main__":
     asyncio.run(main())
-```
-
----
-
-This runs everything on one single port that Railway assigns. WebSocket connects via:
-```
-wss://web-production-91a926.up.railway.app/ws
